@@ -6,6 +6,20 @@ Communication between the AA server and the client is established using a socket
 
 The server responds with a red light in two different cases: if the sent ID is not in the database (invalid ID) or if the client fails to solve the challenge correctly (incorrect symmetric key).
 
+## Structure and Layers
+This application is developed in Java and uses the Spring Boot framework.
+
+- **Repository Layer** – Responsible for data access and persistence operations.
+- **Domain Layer** – Contains the core business entities and models.
+- **Service Layer** – Encapsulates the application logic and coordinates interactions between layers.
+- **Controller Layer** – Exposes endpoints and handles incoming requests.
+
+Controller Layer – Exposes endpoints and handles incoming requests.
+
+Additionally, the application includes a user interface component reserved for administrators, which allows direct interaction with the database (e.g., managing access keys).
+
+![image](https://github.com/user-attachments/assets/e8958d29-23eb-4eb6-936e-a887722271f7)
+
 ## protocol
 
 ## Challenge
