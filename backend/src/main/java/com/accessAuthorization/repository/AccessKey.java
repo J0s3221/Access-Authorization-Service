@@ -1,14 +1,23 @@
 package com.accessAuthorization.repository;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 
 @Entity
 public class AccessKey {
-
     @Id
-    private String id;
+    private String id;  
     private String publicKey;
 
+    // Constructors
+    public AccessKey() {}  
+
+    public AccessKey(String id, String publicKey) {
+        this.id = id;
+        this.publicKey = publicKey;
+    }
+
+    // Getters and setters
     public String getId() { return id; }
     public String getPublicKey() { return publicKey; }
 
