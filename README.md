@@ -17,6 +17,7 @@ This application is developed in Java and uses the Spring Boot framework.
 
 Additionally, the application includes a user interface component reserved for administrators, which allows direct interaction with the database (e.g., managing access keys).
 
+
 ![image](https://github.com/user-attachments/assets/e8958d29-23eb-4eb6-936e-a887722271f7)
 
 ## Protocol
