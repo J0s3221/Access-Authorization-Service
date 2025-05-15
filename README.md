@@ -14,12 +14,13 @@ This application is developed in Java and uses the Spring Boot framework.
 - **Service Layer** – Encapsulates the application logic and coordinates interactions between layers.
 - **Controller Layer** – Exposes endpoints and handles incoming requests.
 
-Controller Layer – Exposes endpoints and handles incoming requests.
 
 Additionally, the application includes a user interface component reserved for administrators, which allows direct interaction with the database (e.g., managing access keys).
 
 ![image](https://github.com/user-attachments/assets/e8958d29-23eb-4eb6-936e-a887722271f7)
 
 ## Protocol
+The protocol of comunication of the application is straight forward and simple. Every user with granted access is first logged in the database by the admin team (using the application for access managing), the database has a list of pairs of id and public key. When a user is logged, a pair of symmetric keys and an id are created. The id and the public key are logged in the database and the user keeps their private key.
+When the user contacts the database, firstly, they send their id, the database checks if the id is present in the database if so it creates a challenge and sends it back to the user.
 
 ## Challenge
