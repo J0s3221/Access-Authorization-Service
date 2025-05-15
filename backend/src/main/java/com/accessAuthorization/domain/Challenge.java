@@ -1,5 +1,12 @@
 package com.accessAuthorization.domain;
 
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.UUID;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
 public class Challenge {
     private String id;
     private String challenge;
@@ -11,7 +18,32 @@ public class Challenge {
     public Challenge(String pubkey) {
         this.pubkey = pubkey;
 
-        // cria o resto das cenas
+        this.id = UUID.randomUUID().toString();
+        this.challenge = generateChallenge();
+    }
+
+    private String generateChallenge() {
+        SecureRandom random = new SecureRandom();
+        byte[] bytes = new byte[32]; // 256-bit challenge
+        random.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    public void hashChallenge() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+
+            byte[] hashBytes = digest.digest(this.challenge.getBytes());
+            
+            // Convert hash to Base64 or Hex (your choice)
+            String hashed = Base64.getUrlEncoder().withoutPadding().encodeToString(hashBytes);
+            
+            // Overwrite or store it somewhere
+            this.challenge = hashed;
+            
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     // Getters e setters
@@ -24,5 +56,4 @@ public class Challenge {
     public String getPubkey() { return pubkey; }
     public void setPubkey(String pubkey) { this.pubkey = pubkey; }
 
-    public void hashChallenge(){} // hash the challenge and returns the digest
 }
