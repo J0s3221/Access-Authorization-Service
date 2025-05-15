@@ -1,7 +1,7 @@
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/DataInitializer.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/service/AccessAuthorizationService.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/repository/AccessKeyRepository.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/domain/Challenge.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/Application.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/controller/AccessAuthorizationController.java
-/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessAuthorization/repository/AccessKey.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/Application.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/controller/AccessAuthorizationController.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/repository/AccessKeyRepository.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/repository/AccessKey.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/service/AccessAuthorizationService.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/DataInitializer.java
+/home/j0ataid/PIC/Access-Authorization-Service/backend/src/main/java/com/accessauthorization/domain/Challenge.java
