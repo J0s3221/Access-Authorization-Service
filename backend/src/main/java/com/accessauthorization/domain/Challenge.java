@@ -29,7 +29,7 @@ public class Challenge {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    public void hashChallenge() {
+    public String hashChallenge() {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
@@ -39,11 +39,19 @@ public class Challenge {
             String hashed = Base64.getUrlEncoder().withoutPadding().encodeToString(hashBytes);
             
             // Overwrite or store it somewhere
-            this.challenge = hashed;
+            return hashed;
 
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
+    }
+
+    public String decypher(String cypher) {
+        // uses public key to decypher the cypher 
+        
+        // place holder
+        String a = "yes";
+        return a;
     }
 
     // Getters e setters

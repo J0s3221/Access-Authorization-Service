@@ -1,6 +1,5 @@
 package com.accessauthorization.controller;
 
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -17,6 +16,7 @@ public class AccessAuthorizationController {
         this.service = service;
     }
 
+    // primeira função recebe id devolve challenge
     public String returnChallenge(String id) {
         Challenge genChallenge = service.generateChallenge(id);
         if (genChallenge == null) {
@@ -24,5 +24,16 @@ public class AccessAuthorizationController {
         }
 
         return genChallenge.getChallenge();
+    }
+
+    // Segunda função recebe siganture verifica e retorna confirmação de sucesso
+    public String confirmSignature(String sign, Challenge challenge){
+        // primeiro chama uma função do service e depois devolve a resposta
+        String response = service.checkResponse(sign, challenge);
+        if (response == null) {
+            throw new RuntimeException("Wrong answer access denied.");
+        }
+
+        return response;
     }
 }
