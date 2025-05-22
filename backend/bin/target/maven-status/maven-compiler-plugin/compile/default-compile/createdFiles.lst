@@ -1,7 +1,0 @@
-com/accessAuthorization/service/AccessAuthorizationService.class
-com/accessAuthorization/repository/AccessKeyRepository.class
-com/accessAuthorization/DataInitializer.class
-com/accessAuthorization/Application.class
-com/accessAuthorization/domain/Challenge.class
-com/accessAuthorization/controller/AccessAuthorizationController.class
-com/accessAuthorization/repository/AccessKey.class
