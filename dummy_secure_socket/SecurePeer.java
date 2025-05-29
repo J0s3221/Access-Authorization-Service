@@ -71,6 +71,65 @@ public class SecurePeer {
         out.println("Hello from PID " + pid);
         String response = in.readLine();
         System.out.println("[PID " + pid + "] Received: " + response);
+
+        //obter o challenge
+        String id = "user123"; //ID válido
+        String challenge = getChallengeFromSpring(id);
+        if (challenge == null) {
+            System.err.println("Challenge não obtido.");
+            return;
+        }
+        System.out.println("Challenge recebido: " + challenge);
+
+        //simula assinatura (no mundo real, seria feita com chave privada)
+        String fakeSignature = "signed_" + challenge;
+
+        //confirma assinatura
+        String result = confirmSignatureWithSpring(fakeSignature, challenge);
+        if (result != null) {
+            System.out.println("Resposta do servidor: " + result);
+        } else {
+            System.err.println("Falha na autenticação.");
+        }
+    }
+
+    static String getChallengeFromSpring(String id) {
+        try {
+            URL url = new URL("http://localhost:8080/access/challenge?id=" + URLEncoder.encode(id, "UTF-8"));
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                return reader.readLine();
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao obter challenge: " + e.getMessage());
+            return null;
+        }
+    }
+
+    static String confirmSignatureWithSpring(String sign, String challenge) {
+        try {
+            URL url = new URL("http://localhost:8080/access/verify");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            String jsonPayload = String.format("{\"sign\":\"%s\", \"challenge\":\"%s\"}", sign, challenge);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(jsonPayload.getBytes());
+                os.flush();
+            }
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                return reader.readLine();
+            }
+        } catch (IOException e) {
+            System.err.println("Erro ao confirmar assinatura: " + e.getMessage());
+            return null;
+        }
     }
 
     static KeyStore loadKeyStore(String path, char[] password) throws Exception {

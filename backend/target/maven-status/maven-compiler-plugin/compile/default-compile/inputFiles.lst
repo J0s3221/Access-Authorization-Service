@@ -1,7 +1,7 @@
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/Application.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/DataInitializer.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/controller/AccessAuthorizationController.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/domain/Challenge.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKey.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKeyRepository.java
-/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/service/AccessAuthorizationService.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/Application.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/DataInitializer.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/controller/AccessAuthorizationController.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/domain/Challenge.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKey.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKeyRepository.java
+/home/vicente/Access-Authorization-Service/backend/src/main/java/com/accessauth/service/AccessAuthorizationService.java
