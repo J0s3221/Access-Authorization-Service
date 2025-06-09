@@ -10,7 +10,7 @@ public class SecurePeer {
     public static void main(String[] args) throws Exception {
         Map<String, String> config = parseArgs(args);
         String keystorePath = config.getOrDefault("keystore", "keystore.jks");
-        String password = config.getOrDefault("password", "changeit");
+        String password = config.getOrDefault("password", "password");
         String host = config.getOrDefault("host", "localhost");
         int port = Integer.parseInt(config.getOrDefault("port", "12345"));
         int pid = (int) ProcessHandle.current().pid();
