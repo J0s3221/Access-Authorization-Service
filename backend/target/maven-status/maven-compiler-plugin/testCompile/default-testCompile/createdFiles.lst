@@ -1,4 +1,3 @@
 com/accessauth/service/AccessAuthorizationServiceTest.class
 com/accessauth/service/AccessAuthorizationServiceTest$GenerateChallengeEdgeCases.class
 com/accessauth/access/AccessApplicationTests.class
-com/accessauth/controller/AccessAuthorizationControllerTest.class

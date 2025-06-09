@@ -14,7 +14,7 @@ public class SecureSocketServer {
         SSLServerSocketFactory factory = sslContext.getServerSocketFactory();
         this.serverSocket = (SSLServerSocket) factory.createServerSocket(port);
     }
-    
+
     // Accept a connection and return a SecureSocket
     public SecureSocket acceptConnection() throws IOException {
         if (!isRunning) {

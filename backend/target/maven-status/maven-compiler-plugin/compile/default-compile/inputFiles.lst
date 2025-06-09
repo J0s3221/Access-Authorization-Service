@@ -5,3 +5,11 @@
 /home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKey.java
 /home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/repository/AccessKeyRepository.java
 /home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/service/AccessAuthorizationService.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/Client.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/JsonClientDemo.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/JsonServerDemo.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/JsonSocketTest.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/SecureSocket.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/SecureSocketServer.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/dto/GameMove.java
+/home/miguel/Documents/coding/Access-Authorization-Service/backend/src/main/java/com/accessauth/socket/dto/UserData.java
