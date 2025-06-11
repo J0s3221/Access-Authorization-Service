@@ -1,6 +1,5 @@
 package com.accessauth.service;
 
-import com.accessauth.domain.Challenge;
 import com.accessauth.repository.AccessKey;
 import com.accessauth.repository.AccessKeyRepository;
 
@@ -21,13 +20,12 @@ import static org.mockito.Mockito.*;
 class AccessAuthorizationServiceTest {
 
     private AccessKeyRepository repository;
-    private AccessAuthorizationService service;
+    private  CryptoService cryptoService;
     private static final Logger logger = LoggerFactory.getLogger(AccessAuthorizationServiceTest.class);
 
     @BeforeEach
     void setUp() {
         repository = mock(AccessKeyRepository.class);
-        service = new AccessAuthorizationService(repository);
     }
 
     @Test
@@ -39,13 +37,12 @@ class AccessAuthorizationServiceTest {
 
         when(repository.findById(id)).thenReturn(Optional.of(accessKey));
 
-        Challenge challenge = service.generateChallenge(id);
+        String challenge = cryptoService.generateChallenge();
 
         assertNotNull(challenge, "Challenge should not be null");
-        assertEquals(publicKey, challenge.getPubkey(), "Public key should match");
-        assertNotNull(challenge.getChallenge(), "Challenge string should not be null");
-        assertFalse(challenge.getChallenge().isEmpty(), "Challenge string should not be empty");
-        logger.info("Generated challenge: {}", challenge.getChallenge());
+        assertNotNull(challenge, "Challenge string should not be null");
+        assertFalse(challenge.isEmpty(), "Challenge string should not be empty");
+        logger.info("Generated challenge: {}", challenge);
     }
 
     @Test
@@ -55,7 +52,7 @@ class AccessAuthorizationServiceTest {
 
         when(repository.findById(id)).thenReturn(Optional.empty());
 
-        Challenge challenge = service.generateChallenge(id);
+        String challenge = cryptoService.generateChallenge();
 
         assertNull(challenge, "Challenge should be null when ID is not found");
     }
@@ -78,7 +75,7 @@ class AccessAuthorizationServiceTest {
                 when(repository.findById(id)).thenReturn(Optional.empty());
             }
 
-            Challenge challenge = service.generateChallenge(id);
+            String challenge = cryptoService.generateChallenge();
             assertEquals(shouldExist, challenge != null);
         }
     }

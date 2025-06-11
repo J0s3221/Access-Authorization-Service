@@ -1,4 +1,4 @@
-package com.example.usermanager.entity;
+package com.accessauth.domain;
 
 import jakarta.persistence.*;
 

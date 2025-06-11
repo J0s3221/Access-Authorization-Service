@@ -5,10 +5,12 @@ import com.google.gson.*;
 public class Client {
     private SecureSocket socket;
     private String clientId;
+    private String userId;
     
-    public Client(String host, int port, String clientId) throws Exception {
+    public Client(String host, int port, String clientId, String userId) throws Exception {
         this.socket = new SecureSocket(host, port, "src/main/resources/keystore.jks", "password");
         this.clientId = clientId;
+        this.userId = userId;
         
         // Start listening for messages from server
         socket.startJsonListening(this::handleServerMessage);
@@ -18,23 +20,33 @@ public class Client {
     
     private void handleServerMessage(JsonObject message) {
         try {
+            System.out.println("[" + clientId + "] Received message: " + message.toString());
+            
             String messageType = message.get("type").getAsString();
             
             switch (messageType) {
-                case "layer_message":
-                    handleLayerMessage(message);
+                case "challenge":
+                    handleChallenge(message);
                     break;
                     
-                case "success":
-                    handleSuccess(message);
+                case "auth_success":
+                    handleAuthSuccess(message);
                     break;
                     
                 case "error":
                     handleError(message);
                     break;
                     
+                case "timeout":
+                    handleTimeout(message);
+                    break;
+                    
+                case "info":
+                    handleInfo(message);
+                    break;
+                    
                 default:
-                    System.out.println("[" + clientId + "] Unknown message: " + messageType);
+                    System.out.println("[" + clientId + "] Unknown message type: " + messageType);
                     System.out.println("Full message: " + message);
                     break;
             }
@@ -43,22 +55,28 @@ public class Client {
         }
     }
     
-    private void handleLayerMessage(JsonObject message) {
-        String layerMessage = message.get("message").getAsString();
-        System.out.println("[" + clientId + "] Received: " + layerMessage);
+    private void handleChallenge(JsonObject message) {
+        String encryptedChallenge = message.get("challenge").getAsString();
+        System.out.println("[" + clientId + "] Received encrypted challenge: " + encryptedChallenge);
         
-        // Send acknowledgment back to server
-        JsonObject response = new JsonObject();
-        response.addProperty("type", "layer_ack");
-        response.addProperty("message", "OK");
-        socket.sendJson(response);
+        // In a real implementation, you would:
+        // 1. Decrypt the challenge using your symmetric key
+        // 2. Process the challenge (maybe add some data or transform it)
+        // 3. Encrypt the response with your symmetric key
         
-        System.out.println("[" + clientId + "] Sent acknowledgment");
+        // For simulation, we'll send a dummy response
+        String dummyResponse = "dummy_challenge_response_" + System.currentTimeMillis();
+        
+        JsonObject challengeResponse = new JsonObject();
+        challengeResponse.addProperty("challenge_response", dummyResponse);
+        
+        socket.sendJson(challengeResponse);
+        System.out.println("[" + clientId + "] Sent challenge response: " + dummyResponse);
     }
     
-    private void handleSuccess(JsonObject message) {
+    private void handleAuthSuccess(JsonObject message) {
         String successMessage = message.get("message").getAsString();
-        System.out.println("[" + clientId + "] SUCCESS: " + successMessage);
+        System.out.println("[" + clientId + "] AUTHENTICATION SUCCESS: " + successMessage);
     }
     
     private void handleError(JsonObject message) {
@@ -66,15 +84,25 @@ public class Client {
         System.err.println("[" + clientId + "] ERROR: " + errorMessage);
     }
     
-    public void startProtocol() {
-        System.out.println("[" + clientId + "] Starting protocol...");
+    private void handleTimeout(JsonObject message) {
+        String timeoutMessage = message.get("message").getAsString();
+        System.err.println("[" + clientId + "] TIMEOUT: " + timeoutMessage);
+    }
+    
+    private void handleInfo(JsonObject message) {
+        String infoMessage = message.get("message").getAsString();
+        System.out.println("[" + clientId + "] INFO: " + infoMessage);
+    }
+    
+    public void startAuthentication() {
+        System.out.println("[" + clientId + "] Starting authentication for user: " + userId);
         
-        JsonObject protocolStart = new JsonObject();
-        protocolStart.addProperty("type", "protocol_start");
-        protocolStart.addProperty("user_id", "user123");
+        // Send user ID to start the authentication process
+        JsonObject idMessage = new JsonObject();
+        idMessage.addProperty("id", userId);
         
-        socket.sendJson(protocolStart);
-        System.out.println("[" + clientId + "] Sent protocol_start message");
+        socket.sendJson(idMessage);
+        System.out.println("[" + clientId + "] Sent user ID: " + userId);
     }
     
     public void close() throws Exception {
@@ -84,17 +112,19 @@ public class Client {
     
     public static void main(String[] args) {
         try {
-            Client client = new Client("localhost", 12345, "TestClient");
+            // You can change the userId here to test different users
+            String testUserId = "2"; // Make sure this user exists in your database
+            Client client = new Client("localhost", 12345, "TestClient", testUserId);
             
             // Wait a moment for connection to establish
             Thread.sleep(1000);
             
-            // Start the protocol
-            client.startProtocol();
+            // Start the authentication process
+            client.startAuthentication();
             
-            // Keep the client running to receive all protocol messages
-            System.out.println("[TestClient] Waiting for protocol messages...");
-            Thread.sleep(15000); // Wait 15 seconds for protocol to complete
+            // Keep the client running to receive all authentication messages
+            System.out.println("[TestClient] Waiting for authentication messages...");
+            Thread.sleep(15000); // Wait 15 seconds for authentication to complete
             
             client.close();
             
