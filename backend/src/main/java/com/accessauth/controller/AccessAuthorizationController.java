@@ -10,18 +10,24 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import java.util.concurrent.*;
 import jakarta.annotation.PreDestroy;
-import java.util.Map;
 import java.util.Optional;
+import java.nio.charset.StandardCharsets;
 
 import com.accessauth.socket.*;
 
 @Component
 public class AccessAuthorizationController {
     private SecureSocketServer server;
+    private SecureSocket currentClient;
     
-    // Track client states and timeouts
-    private final Map<SecureSocket, ClientState> clientStates = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService timeoutExecutor = Executors.newScheduledThreadPool(10);
+    // Simple single-client state
+    private String currentChallenge;
+    private String currentSymmetricKey;
+    private String currentUserId;
+    private String serverState;
+    private ScheduledFuture<?> timeoutTask;
+    
+    private final ScheduledExecutorService timeoutExecutor = Executors.newScheduledThreadPool(1);
     
     @Autowired
     private UserService userService;
@@ -34,28 +40,53 @@ public class AccessAuthorizationController {
 
     private static final long PROTOCOL_TIMEOUT = 8000; // 8 seconds
     
-    // Client state tracking
-    private static class ClientState {
-        private String currentLayer;
-        private String userId;
-        private String challenge;
-        private long lastActivity;
-        private ScheduledFuture<?> timeoutTask;
+    // Protocol step constants
+    private static final String AUTH_REQUEST = "auth_request";
+    private static final String STEP_CHALLENGE = "challenge";
+    private static final String CHALLENGE_RESPONSE = "challenge_response";
+    private static final String STEP_AUTH_SUCCESS = "auth_success";
+    private static final String STEP_AUTH_ERROR = "auth_error";
+    private static final String STEP_TIMEOUT = "timeout";
+    
+    /**
+     * Convert string to hexadecimal representation
+     * @param input the input string
+     * @return hexadecimal string
+     */
+    private String stringToHex(String input) {
+        if (input == null) return null;
         
-        public ClientState() {
-            this.lastActivity = System.currentTimeMillis();
+        byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : bytes) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+    
+    /**
+     * Convert hexadecimal string back to regular string
+     * @param hexInput the hexadecimal input string
+     * @return decoded string
+     */
+    private String hexToString(String hexInput) {
+        if (hexInput == null || hexInput.length() % 2 != 0) {
+            throw new IllegalArgumentException("Invalid hexadecimal string");
         }
         
-        public void updateActivity() {
-            this.lastActivity = System.currentTimeMillis();
+        byte[] bytes = new byte[hexInput.length() / 2];
+        for (int i = 0; i < hexInput.length(); i += 2) {
+            String hex = hexInput.substring(i, i + 2);
+            bytes[i / 2] = (byte) Integer.parseInt(hex, 16);
         }
-        
-        public boolean isTimedOut() {
-            return (System.currentTimeMillis() - lastActivity) > PROTOCOL_TIMEOUT;
-        }
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    @EventListener(ApplicationReadyEvent.class)
+    @EventListener(ApplicationReadyEvent.class)  
     public void startServer() {
         new Thread(() -> {
             try {
@@ -66,8 +97,7 @@ public class AccessAuthorizationController {
                 while (server.isRunning()) {
                     SecureSocket clientSocket = server.acceptConnection();
                     System.out.println("[Server] New client connected");
-
-                    new Thread(() -> handleClient(clientSocket)).start();
+                    handleClient(clientSocket);
                 }
             } catch (Exception e) {
                 System.err.println("[Server] Error: " + e.getMessage());
@@ -76,240 +106,292 @@ public class AccessAuthorizationController {
     }
 
     private void handleClient(SecureSocket clientSocket) {
-        // Initialize client state
-        ClientState clientState = new ClientState();
-        clientStates.put(clientSocket, clientState);
+        // Set current client and reset state
+        this.currentClient = clientSocket;
+        resetState();
         
-        System.out.println("[Server] Client connected, initialized state tracking");
+        System.out.println("[Server] Client connected, state reset");
         
         // Start listening for incoming messages
         clientSocket.startJsonListening(message -> {
             try {
-                handleIncomingMessage(clientSocket, message);
+                handleIncomingMessage(message);
             } catch (Exception e) {
                 System.err.println("[Server] Error handling message: " + e.getMessage());
-                sendMessage(clientSocket, "error", "Message processing failed");
-                cleanupClient(clientSocket);
+                sendProtocolMessage(STEP_AUTH_ERROR, "Message processing failed", null);
+                resetState();
             }
         });
-        
-        // Set up connection cleanup on disconnect
-        // Note: This depends on your SecureSocket implementation having a disconnect callback
-        // You might need to adapt this based on your actual SecureSocket API
     }
     
     /**
-     * Clean up client state and cancel any pending timeouts
+     * Reset all state variables
      */
-    private void cleanupClient(SecureSocket clientSocket) {
-        ClientState state = clientStates.get(clientSocket);
-        if (state != null) {
-            if (state.timeoutTask != null && !state.timeoutTask.isDone()) {
-                state.timeoutTask.cancel(true);
-            }
-            clientStates.remove(clientSocket);
-            ClientState clientState = new ClientState();
-            clientStates.put(clientSocket, clientState);
-            System.out.println("[Server] Cleaned up client state");
+    private void resetState() {
+        currentChallenge = null;
+        currentSymmetricKey = null;
+        currentUserId = null;
+        serverState = null;
+        
+        // Cancel any existing timeout
+        if (timeoutTask != null && !timeoutTask.isDone()) {
+            timeoutTask.cancel(true);
         }
+        
+        System.out.println("[Server] State reset");
     }
 
     /**
-     * Handle incoming JSON messages from client
-     * @param clientSocket the client socket
+     * Handle incoming JSON messages from client based on protocol step type
      * @param message the received JSON message
      */
-    private void handleIncomingMessage(SecureSocket clientSocket, JsonObject message) {
-        ClientState clientState = clientStates.get(clientSocket);
-        if (clientState == null) {
-            System.err.println("[Server] No client state found for socket");
-            return;
-        }
-        
-        // Update client activity
-        clientState.updateActivity();
-        
+    private void handleIncomingMessage(JsonObject message) {
         // Cancel any existing timeout task
-        if (clientState.timeoutTask != null && !clientState.timeoutTask.isDone()) {
-            clientState.timeoutTask.cancel(true);
+        if (timeoutTask != null && !timeoutTask.isDone()) {
+            timeoutTask.cancel(true);
         }
         
         System.out.println("[Server] Received message: " + message.toString());
         
-        // Check if message contains "id" key - this starts the authentication process
-        if (message.has("id") && !message.get("id").isJsonNull()) {
-            String userId = message.get("id").getAsString();
-            System.out.println("[Server] Processing ID handler for user: " + userId);
-            idHandler(clientSocket, userId);
-        } 
-        // Check if this is a challenge response
-        else if (message.has("challenge_response") && !message.get("challenge_response").isJsonNull()) {
-            handleChallengeResponse(clientSocket, message);
+        // Check if message contains "type" field for protocol step
+        if (!message.has("type") || message.get("type").isJsonNull()) {
+            System.out.println("[Server] Received message without protocol type field");
+            sendProtocolMessage(STEP_AUTH_ERROR, "Invalid message format - missing protocol type", null);
+            return;
         }
-        // Handle other message types as needed
-        else {
-            System.out.println("[Server] Received message without recognized fields");
-            sendMessage(clientSocket, "info", "Message received but no recognized action found");
+        
+        String protocolStep = message.get("type").getAsString();
+        System.out.println("[Server] Processing protocol step: " + protocolStep);
+        
+        switch (protocolStep) {
+            case AUTH_REQUEST:
+                handleAuthRequest(message);
+                break;
+            case CHALLENGE_RESPONSE:
+                handleChallengeResponse(message);
+                break;
+            default:
+                System.out.println("[Server] Unknown protocol step: " + protocolStep);
+                sendProtocolMessage(STEP_AUTH_ERROR, "Unknown protocol step: " + protocolStep, null);
+                break;
         }
     }
 
     /**
-     * Handle ID verification and challenge generation for a specific user
-     * @param clientSocket the client socket
-     * @param userId the user ID to process
+     * Handle authentication request (Step 1 of protocol)
+     * Expected message format: {"type": "auth_request", "user_id": "123"}
+     * @param message the authentication request message
      */
-    private void idHandler(SecureSocket clientSocket, String userId) {
-        ClientState clientState = clientStates.get(clientSocket);
-        if (clientState == null) {
-            System.err.println("[Server] No client state found for ID handler");
-            return;
-        }
-        
+    private void handleAuthRequest(JsonObject message) {
         try {
-            System.out.println("[Server] Executing ID Handler for user: " + userId);
+            // Check if user_id is provided
+            if (!message.has("user_id") || message.get("user_id").isJsonNull()) {
+                System.out.println("[Server] Auth request missing user_id");
+                sendProtocolMessage(STEP_AUTH_ERROR, "Missing user_id in auth_request", null);
+                resetState();
+                return;
+            }
             
-            // Update client state
-            clientState.currentLayer = "ID_VERIFICATION";
-            clientState.userId = userId;
+            String userId = message.get("user_id").getAsString();
+            System.out.println("[Server] Processing auth_request for user: " + userId);
+            
+            // Update state
+            serverState = "ID_VERIFICATION";
+            currentUserId = userId;
 
             Long userIdLong;
             try {
                 userIdLong = Long.parseLong(userId);
             } catch (NumberFormatException e) {
                 System.out.println("[Server] Invalid user ID format: " + userId);
-                sendMessage(clientSocket, "error", "Invalid user ID format");
-                cleanupClient(clientSocket);
+                sendProtocolMessage(STEP_AUTH_ERROR, "Invalid user ID format", null);
+                resetState();
                 return;
             }
-
 
             // Check if user exists in database
             if (!userService.userExists(userIdLong)) {
-                System.out.println("[Server] ID Handler failed - user not found: " + userIdLong);
-                sendMessage(clientSocket, "error", "User not found or inactive");
-                cleanupClient(clientSocket);
+                System.out.println("[Server] Auth request failed - user not found: " + userIdLong);
+                sendProtocolMessage(STEP_AUTH_ERROR, "User not found or inactive", null);
+                resetState();
                 return;
             }
 
+            // Retrieve symmetric key for user
             Optional<String> symKeyOpt = userService.getSymmetricKey(userIdLong);
             if (!symKeyOpt.isPresent()) {
-                System.out.println("[Server] ID Handler failed - symmetric key not found for user: " + userIdLong);
-                sendMessage(clientSocket, "error", "User authentication data not available");
-                cleanupClient(clientSocket);
+                System.out.println("[Server] Auth request failed - symmetric key not found for user: " + userIdLong);
+                sendProtocolMessage(STEP_AUTH_ERROR, "User authentication data not available", null);
+                resetState();
                 return;
             }
 
-            String symKey = symKeyOpt.get();
+            currentSymmetricKey = symKeyOpt.get();
             System.out.println("[Server] Retrieved symmetric key for user: " + userId);
 
             // Generate challenge
-            String challenge = cryptoService.generateChallenge();
-            clientState.challenge = challenge; // Store challenge for verification
+            currentChallenge = cryptoService.generateChallenge();
             System.out.println("[Server] Generated challenge for user: " + userId);
 
             // Encrypt challenge with user's symmetric key
             try {
-                String encryptedChallenge = cryptoService.encryptChallenge(challenge, symKey);
+                String encryptedChallenge = cryptoService.encryptChallenge(currentChallenge, currentSymmetricKey);
                 
-                // Send encrypted challenge to client
-                JsonObject challengeMessage = new JsonObject();
-                challengeMessage.addProperty("type", "challenge");
-                challengeMessage.addProperty("challenge", encryptedChallenge);
-                clientSocket.sendJson(challengeMessage);
+                // Convert encrypted challenge to hexadecimal
+                String hexEncryptedChallenge = stringToHex(encryptedChallenge);
                 
-                System.out.println("[Server] Sent encrypted challenge to user: " + userId);
+                // Send challenge (Step 2 of protocol)
+                JsonObject challengeData = new JsonObject();
+                challengeData.addProperty("challenge", hexEncryptedChallenge);
+                sendProtocolMessage(STEP_CHALLENGE, "Challenge generated", challengeData);
+                
+                System.out.println("[Server] Sent encrypted challenge (hex) to user: " + userId);
                 
                 // Set up timeout for challenge response
-                clientState.currentLayer = "WAITING_CHALLENGE_RESPONSE";
-                startTimeout(clientSocket, "challenge response");
+                serverState = "WAITING_CHALLENGE_RESPONSE";
+                startTimeout("challenge response");
                 
             } catch (Exception e) {
-                System.err.println("[Server] ID Handler failed - encryption error for user " + userId + ": " + e.getMessage());
-                sendMessage(clientSocket, "error", "Challenge encryption failed");
-                cleanupClient(clientSocket);
+                System.err.println("[Server] Auth request failed - encryption error for user " + userId + ": " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge encryption failed", null);
+                resetState();
             }
 
         } catch (Exception e) {
-            System.err.println("[Server] ID Handler error for user " + userId + ": " + e.getMessage());
-            sendMessage(clientSocket, "error", "ID Handler processing failed");
-            cleanupClient(clientSocket);
+            System.err.println("[Server] Auth request error for user " + currentUserId + ": " + e.getMessage());
+            sendProtocolMessage(STEP_AUTH_ERROR, "Auth request processing failed", null);
+            resetState();
         }
     }
     
     /**
-     * Handle challenge response from client
-     * @param clientSocket the client socket
+     * Handle challenge response (Step 3 of protocol)
+     * Expected message format: {"type": "challenge_response", "response": "encrypted_response"}
      * @param message the response message
      */
-    private void handleChallengeResponse(SecureSocket clientSocket, JsonObject message) {
-        ClientState clientState = clientStates.get(clientSocket);
-        if (clientState == null) {
-            System.err.println("[Server] No client state found for challenge response");
-            return;
-        }
-        
-        if (!"WAITING_CHALLENGE_RESPONSE".equals(clientState.currentLayer)) {
-            System.err.println("[Server] Received challenge response in wrong state: " + clientState.currentLayer);
-            sendMessage(clientSocket, "error", "Unexpected challenge response");
-            cleanupClient(clientSocket);
+    private void handleChallengeResponse(JsonObject message) {
+        if (!"WAITING_CHALLENGE_RESPONSE".equals(serverState)) {
+            System.err.println("[Server] Received challenge response in wrong state: " + serverState);
+            sendProtocolMessage(STEP_AUTH_ERROR, "Unexpected challenge response", null);
+            resetState();
             return;
         }
         
         try {
-            String challengeResponse = message.get("challenge_response").getAsString();
-            System.out.println("[Server] Received challenge response from user: " + clientState.userId);
+            // Check if response is provided
+            if (!message.has("response") || message.get("response").isJsonNull()) {
+                System.out.println("[Server] Challenge response missing response field");
+                sendProtocolMessage(STEP_AUTH_ERROR, "Missing response in challenge_response", null);
+                resetState();
+                return;
+            }
             
-            // Here you would verify the challenge response
-            // For now, we'll assume it's correct and move to next layer
-            // You might want to decrypt and verify the response matches the original challenge
+            String hexEncryptedChallengeResponse = message.get("response").getAsString();
+            System.out.println("[Server] Received challenge response (hex) from user: " + currentUserId);
             
-            System.out.println("[Server] Challenge response verified for user: " + clientState.userId);
-            clientState.currentLayer = "AUTHENTICATED";
+            // Convert hex response back to encrypted string
+            String encryptedChallengeResponse;
+            try {
+                encryptedChallengeResponse = hexToString(hexEncryptedChallengeResponse);
+                System.out.println("[Server] Successfully converted hex response to encrypted string for user: " + currentUserId);
+            } catch (Exception e) {
+                System.err.println("[Server] Failed to decode hex response for user: " + currentUserId + ": " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Invalid hexadecimal response format", null);
+                resetState();
+                return;
+            }
+            
+            // Decrypt the challenge response using the stored symmetric key
+            String decryptedResponse;
+            try {
+                decryptedResponse = cryptoService.decryptChallenge(encryptedChallengeResponse, currentSymmetricKey);
+                System.out.println("[Server] Successfully decrypted challenge response for user: " + currentUserId);
+            } catch (Exception e) {
+                System.err.println("[Server] Failed to decrypt challenge response for user: " + currentUserId + ": " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge response decryption failed", null);
+                resetState();
+                return;
+            }
+            
+            // Compare the decrypted response with the original challenge
+            if (currentChallenge == null) {
+                System.err.println("[Server] No stored challenge found for user: " + currentUserId);
+                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge verification failed - no stored challenge", null);
+                resetState();
+                return;
+            }
+            
+            if (!currentChallenge.equals(decryptedResponse)) {
+                System.err.println("[Server] Challenge verification failed for user: " + currentUserId);
+                System.err.println("[Server] Expected: " + currentChallenge + ", Received: " + decryptedResponse);
+                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge verification failed", null);
+                resetState();
+                return;
+            }
+            
+            // Challenge verification successful (Step 4 of protocol)
+            System.out.println("[Server] Challenge response verified successfully for user: " + currentUserId);
+            serverState = "AUTHENTICATED";
             
             // Send success response
-            sendMessage(clientSocket, "auth_success", "Authentication successful");
+            JsonObject successData = new JsonObject();
+            successData.addProperty("user_id", currentUserId);
+            successData.addProperty("timestamp", System.currentTimeMillis());
+            sendProtocolMessage(STEP_AUTH_SUCCESS, "Authentication successful", successData);
             
-            // Continue with next layer or complete the protocol
-            // For now, we'll just complete
-            System.out.println("[Server] Authentication completed successfully for user: " + clientState.userId);
+            System.out.println("[Server] Authentication completed successfully for user: " + currentUserId);
+            
+            // Clear sensitive data
+            currentChallenge = null;
+            currentSymmetricKey = null;
             
         } catch (Exception e) {
             System.err.println("[Server] Error processing challenge response: " + e.getMessage());
-            sendMessage(clientSocket, "error", "Challenge response processing failed");
-            cleanupClient(clientSocket);
+            sendProtocolMessage(STEP_AUTH_ERROR, "Challenge response processing failed", null);
+            resetState();
         }
     }
     
     /**
      * Start a timeout timer for the current operation
-     * @param clientSocket the client socket
      * @param operation description of the operation being timed
      */
-    private void startTimeout(SecureSocket clientSocket, String operation) {
-        ClientState clientState = clientStates.get(clientSocket);
-        if (clientState == null) return;
-        
+    private void startTimeout(String operation) {
         // Cancel any existing timeout
-        if (clientState.timeoutTask != null && !clientState.timeoutTask.isDone()) {
-            clientState.timeoutTask.cancel(true);
+        if (timeoutTask != null && !timeoutTask.isDone()) {
+            timeoutTask.cancel(true);
         }
         
         // Start new timeout
-        clientState.timeoutTask = timeoutExecutor.schedule(() -> {
-            System.out.println("[Server] Timeout waiting for " + operation + " from user: " + clientState.userId);
-            sendMessage(clientSocket, "timeout", "Timeout waiting for " + operation);
-            cleanupClient(clientSocket);
+        timeoutTask = timeoutExecutor.schedule(() -> {
+            System.out.println("[Server] Timeout waiting for " + operation + " from user: " + currentUserId);
+            sendProtocolMessage(STEP_TIMEOUT, "Timeout waiting for " + operation, null);
+            resetState();
         }, PROTOCOL_TIMEOUT, TimeUnit.MILLISECONDS);
         
         System.out.println("[Server] Started " + PROTOCOL_TIMEOUT + "ms timeout for " + operation);
     }
 
-    private void sendMessage(SecureSocket clientSocket, String type, String message) {
-        JsonObject json = new JsonObject();
-        json.addProperty("type", type);
-        json.addProperty("message", message);
-        clientSocket.sendJson(json);
-        System.out.println("[Server] Sent message - type: " + type + ", message: " + message);
+    /**
+     * Send a protocol message with structured format
+     * @param protocolStep the protocol step type
+     * @param message the message content
+     * @param data additional data payload (can be null)
+     */
+    private void sendProtocolMessage(String protocolStep, String message, JsonObject data) {
+        if (currentClient != null) {
+            JsonObject json = new JsonObject();
+            json.addProperty("type", protocolStep);
+            json.addProperty("message", message);
+            json.addProperty("timestamp", System.currentTimeMillis());
+            
+            if (data != null) {
+                json.add("data", data);
+            }
+            
+            currentClient.sendJson(json);
+            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message: " + message);
+        }
     }
     
     /**

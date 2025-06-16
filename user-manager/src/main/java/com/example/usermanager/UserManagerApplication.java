@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import com.example.usermanager.CardSetupService;
+
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -80,22 +82,28 @@ public class UserManagerApplication implements CommandLineRunner {
     private void addUser(Scanner scanner) throws Exception {
         System.out.print("Enter username of the new user: ");
         String username = scanner.nextLine();
-
-        // Gerar userId (UUID)
-        String userId = UUID.randomUUID().toString();
-
-        // Gerar chave simétrica AES 256 bits em Base64
-        String symKey = generateSymmetricKey();
-
-        // Gerar email falso
+    
+        System.out.print("Enter PIN for the card (optional, press enter to skip): ");
+        String pin = scanner.nextLine();
+    
+        // Gerar chave simétrica
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        keyGen.init(128); 
+        SecretKey secretKey = keyGen.generateKey();
+        byte[] keyBytes = secretKey.getEncoded();
+        String symKeyBase64 = Base64.getEncoder().encodeToString(keyBytes);
+    
         String email = generateRandomEmail(username);
-
-        User newUser = new User(symKey, username, email);
+        User newUser = new User(symKeyBase64, username, email);
         userRepository.save(newUser);
-
-        System.out.println("User added: " + newUser.getUsername() + " with email " + email);
-        System.out.println("Symmetric key (base64): " + symKey);
+    
+        System.out.println("User added: " + newUser.getUsername());
+    
+        // Setup do cartão
+        CardSetupService cardSetup = new CardSetupService();
+        cardSetup.setupCard(username, keyBytes, pin);
     }
+    
 
     private void addUser(String username) throws Exception {
         // Gerar userId (UUID)
