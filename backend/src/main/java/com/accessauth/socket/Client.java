@@ -114,7 +114,7 @@ public class Client {
         try {
             // You can change the userId here to test different users
             String testUserId = "2"; // Make sure this user exists in your database
-            Client client = new Client("localhost", 12345, "TestClient", testUserId);
+            Client client = new Client("192.168.1.113", 12345, "TestClient", testUserId);
             
             // Wait a moment for connection to establish
             Thread.sleep(1000);
