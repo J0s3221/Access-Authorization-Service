@@ -153,13 +153,6 @@ public class AccessAuthorizationController {
         
         System.out.println("[Server] Received message: " + message.toString());
         
-        // Check if message contains user_id field for legacy support
-        if (message.has("id") && !message.get("id").isJsonNull()) {
-            System.out.println("[Server] Processing legacy ID message");
-            handleLegacyIdMessage(message);
-            return;
-        }
-        
         // Check if message contains "type" field for protocol step
         if (!message.has("type") || message.get("type").isJsonNull()) {
             System.out.println("[Server] Received message without protocol type field");
@@ -181,38 +174,6 @@ public class AccessAuthorizationController {
                 System.out.println("[Server] Unknown protocol step: " + protocolStep);
                 sendProtocolMessage(STEP_AUTH_ERROR, "Unknown protocol step: " + protocolStep, null);
                 break;
-        }
-    }
-
-    /**
-     * Handle legacy ID message format (for compatibility with existing client)
-     * Expected message format: {"id": "hex_encoded_user_id"}
-     * @param message the ID message
-     */
-    private void handleLegacyIdMessage(JsonObject message) {
-        try {
-            String hexUserId = message.get("id").getAsString();
-            System.out.println("[Server] Received hex-encoded user ID: " + hexUserId);
-            
-            // Decode hex user ID
-            String userId;
-            try {
-                userId = hexToString(hexUserId);
-                System.out.println("[Server] Decoded user ID: " + userId);
-            } catch (Exception e) {
-                System.err.println("[Server] Failed to decode hex user ID: " + e.getMessage());
-                sendProtocolMessage(STEP_AUTH_ERROR, "Invalid hexadecimal user ID format", null);
-                resetState();
-                return;
-            }
-            
-            // Process as auth request
-            processAuthRequestForUser(userId);
-            
-        } catch (Exception e) {
-            System.err.println("[Server] Error processing legacy ID message: " + e.getMessage());
-            sendProtocolMessage(STEP_AUTH_ERROR, "ID message processing failed", null);
-            resetState();
         }
     }
 
@@ -335,7 +296,6 @@ public class AccessAuthorizationController {
     /**
      * Handle challenge response (Step 3 of protocol)
      * Expected message format: {"type": "challenge_response", "response": "hex_encoded_response"}
-     * OR legacy format: {"challenge_response": "hex_encoded_response"}
      * @param message the response message
      */
     private void handleChallengeResponse(JsonObject message) {
@@ -347,32 +307,23 @@ public class AccessAuthorizationController {
         }
         
         try {
-            String hexEncryptedChallengeResponse = null;
-            
-            // Check for response field (new format)
-            if (message.has("response") && !message.get("response").isJsonNull()) {
-                hexEncryptedChallengeResponse = message.get("response").getAsString();
-            }
-            // Check for legacy challenge_response field
-            else if (message.has("challenge_response") && !message.get("challenge_response").isJsonNull()) {
-                hexEncryptedChallengeResponse = message.get("challenge_response").getAsString();
-                System.out.println("[Server] Using legacy challenge_response field");
-            }
-            
-            if (hexEncryptedChallengeResponse == null) {
+            // Check for response field
+            if (!message.has("response") || message.get("response").isJsonNull()) {
                 System.out.println("[Server] Challenge response missing response field");
                 sendProtocolMessage(STEP_AUTH_ERROR, "Missing response in challenge_response", null);
                 resetState();
                 return;
             }
             
+            String encrypted_hexReceivedDigest = message.get("response").getAsString();
             System.out.println("[Server] Received challenge response (hex) from user: " + currentUserId);
             
-            // Convert hex response back to encrypted string
-            String encryptedChallengeResponse;
+            // Convert encrypted hex response back to Base64 digest string
+            String receivedDigest;
             try {
-                encryptedChallengeResponse = hexToString(hexEncryptedChallengeResponse);
-                System.out.println("[Server] Successfully converted hex response to encrypted string for user: " + currentUserId);
+                String hexReceivedDigest = cryptoService.decryptChallenge(encrypted_hexReceivedDigest, currentSymmetricKey);
+                receivedDigest = hexToString(hexReceivedDigest);
+                System.out.println("[Server] Successfully converted hex response to digest string for user: " + currentUserId);
             } catch (Exception e) {
                 System.err.println("[Server] Failed to decode hex response for user: " + currentUserId + ": " + e.getMessage());
                 sendProtocolMessage(STEP_AUTH_ERROR, "Invalid hexadecimal response format", null);
@@ -380,19 +331,7 @@ public class AccessAuthorizationController {
                 return;
             }
             
-            // Decrypt the challenge response using the stored symmetric key
-            String decryptedResponse;
-            try {
-                decryptedResponse = cryptoService.decryptChallenge(encryptedChallengeResponse, currentSymmetricKey);
-                System.out.println("[Server] Successfully decrypted challenge response for user: " + currentUserId);
-            } catch (Exception e) {
-                System.err.println("[Server] Failed to decrypt challenge response for user: " + currentUserId + ": " + e.getMessage());
-                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge response decryption failed", null);
-                resetState();
-                return;
-            }
-            
-            // Compare the decrypted response with the original challenge
+            // Verify we have the original challenge stored
             if (currentChallenge == null) {
                 System.err.println("[Server] No stored challenge found for user: " + currentUserId);
                 sendProtocolMessage(STEP_AUTH_ERROR, "Challenge verification failed - no stored challenge", null);
@@ -400,9 +339,23 @@ public class AccessAuthorizationController {
                 return;
             }
             
-            if (!currentChallenge.equals(decryptedResponse)) {
+            // Compute the expected digest of the original challenge
+            String expectedDigest;
+            try {
+                expectedDigest = cryptoService.computeChallengeDigest(currentChallenge);
+                System.out.println("[Server] Computed expected digest for challenge verification for user: " + currentUserId);
+            } catch (Exception e) {
+                System.err.println("[Server] Failed to compute challenge digest for user: " + currentUserId + ": " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Challenge digest computation failed", null);
+                resetState();
+                return;
+            }
+            
+            // Compare the received digest with the expected digest
+            if (!expectedDigest.equals(receivedDigest)) {
                 System.err.println("[Server] Challenge verification failed for user: " + currentUserId);
-                System.err.println("[Server] Expected: " + currentChallenge + ", Received: " + decryptedResponse);
+                System.err.println("[Server] Expected digest: " + expectedDigest);
+                System.err.println("[Server] Received digest: " + receivedDigest);
                 sendProtocolMessage(STEP_AUTH_ERROR, "Challenge verification failed", null);
                 resetState();
                 return;
@@ -459,18 +412,13 @@ public class AccessAuthorizationController {
      */
     private void sendProtocolMessage(String protocolStep, String message, JsonObject data) {
         if (currentClient != null) {
-            JsonObject json = new JsonObject();
-            json.addProperty("type", protocolStep);
-            json.addProperty("message", stringToHex(message)); // Encode message in hex
-            json.addProperty("timestamp", System.currentTimeMillis());
-            
             if (data != null) {
-                json.add("data", data);
+                data.addProperty("type", protocolStep);
+                data.addProperty("timestamp", stringToHex(String.valueOf(System.currentTimeMillis()))); // Encode timestamp in hex
             }
             
-            currentClient.sendJson(json);
-            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message (original): " + message);
-            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message (hex): " + stringToHex(message));
+            currentClient.sendJson(data);
+            System.out.println("[Server] Sent protocol message - type: " + protocolStep);
         }
     }
     
