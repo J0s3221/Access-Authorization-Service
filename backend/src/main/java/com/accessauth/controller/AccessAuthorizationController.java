@@ -153,6 +153,13 @@ public class AccessAuthorizationController {
         
         System.out.println("[Server] Received message: " + message.toString());
         
+        // Check if message contains user_id field for legacy support
+        if (message.has("id") && !message.get("id").isJsonNull()) {
+            System.out.println("[Server] Processing legacy ID message");
+            handleLegacyIdMessage(message);
+            return;
+        }
+        
         // Check if message contains "type" field for protocol step
         if (!message.has("type") || message.get("type").isJsonNull()) {
             System.out.println("[Server] Received message without protocol type field");
@@ -178,8 +185,40 @@ public class AccessAuthorizationController {
     }
 
     /**
+     * Handle legacy ID message format (for compatibility with existing client)
+     * Expected message format: {"id": "hex_encoded_user_id"}
+     * @param message the ID message
+     */
+    private void handleLegacyIdMessage(JsonObject message) {
+        try {
+            String hexUserId = message.get("id").getAsString();
+            System.out.println("[Server] Received hex-encoded user ID: " + hexUserId);
+            
+            // Decode hex user ID
+            String userId;
+            try {
+                userId = hexToString(hexUserId);
+                System.out.println("[Server] Decoded user ID: " + userId);
+            } catch (Exception e) {
+                System.err.println("[Server] Failed to decode hex user ID: " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Invalid hexadecimal user ID format", null);
+                resetState();
+                return;
+            }
+            
+            // Process as auth request
+            processAuthRequestForUser(userId);
+            
+        } catch (Exception e) {
+            System.err.println("[Server] Error processing legacy ID message: " + e.getMessage());
+            sendProtocolMessage(STEP_AUTH_ERROR, "ID message processing failed", null);
+            resetState();
+        }
+    }
+
+    /**
      * Handle authentication request (Step 1 of protocol)
-     * Expected message format: {"type": "auth_request", "user_id": "123"}
+     * Expected message format: {"type": "auth_request", "user_id": "hex_encoded_user_id"}
      * @param message the authentication request message
      */
     private void handleAuthRequest(JsonObject message) {
@@ -192,8 +231,37 @@ public class AccessAuthorizationController {
                 return;
             }
             
-            String userId = message.get("user_id").getAsString();
-            System.out.println("[Server] Processing auth_request for user: " + userId);
+            String hexUserId = message.get("user_id").getAsString();
+            System.out.println("[Server] Received hex-encoded user ID in auth request: " + hexUserId);
+            
+            // Decode hex user ID
+            String userId;
+            try {
+                userId = hexToString(hexUserId);
+                System.out.println("[Server] Decoded user ID: " + userId);
+            } catch (Exception e) {
+                System.err.println("[Server] Failed to decode hex user ID: " + e.getMessage());
+                sendProtocolMessage(STEP_AUTH_ERROR, "Invalid hexadecimal user ID format", null);
+                resetState();
+                return;
+            }
+            
+            processAuthRequestForUser(userId);
+            
+        } catch (Exception e) {
+            System.err.println("[Server] Auth request error: " + e.getMessage());
+            sendProtocolMessage(STEP_AUTH_ERROR, "Auth request processing failed", null);
+            resetState();
+        }
+    }
+    
+    /**
+     * Process authentication request for a specific user
+     * @param userId the decoded user ID
+     */
+    private void processAuthRequestForUser(String userId) {
+        try {
+            System.out.println("[Server] Processing auth request for user: " + userId);
             
             // Update state
             serverState = "ID_VERIFICATION";
@@ -266,7 +334,8 @@ public class AccessAuthorizationController {
     
     /**
      * Handle challenge response (Step 3 of protocol)
-     * Expected message format: {"type": "challenge_response", "response": "encrypted_response"}
+     * Expected message format: {"type": "challenge_response", "response": "hex_encoded_response"}
+     * OR legacy format: {"challenge_response": "hex_encoded_response"}
      * @param message the response message
      */
     private void handleChallengeResponse(JsonObject message) {
@@ -278,15 +347,25 @@ public class AccessAuthorizationController {
         }
         
         try {
-            // Check if response is provided
-            if (!message.has("response") || message.get("response").isJsonNull()) {
+            String hexEncryptedChallengeResponse = null;
+            
+            // Check for response field (new format)
+            if (message.has("response") && !message.get("response").isJsonNull()) {
+                hexEncryptedChallengeResponse = message.get("response").getAsString();
+            }
+            // Check for legacy challenge_response field
+            else if (message.has("challenge_response") && !message.get("challenge_response").isJsonNull()) {
+                hexEncryptedChallengeResponse = message.get("challenge_response").getAsString();
+                System.out.println("[Server] Using legacy challenge_response field");
+            }
+            
+            if (hexEncryptedChallengeResponse == null) {
                 System.out.println("[Server] Challenge response missing response field");
                 sendProtocolMessage(STEP_AUTH_ERROR, "Missing response in challenge_response", null);
                 resetState();
                 return;
             }
             
-            String hexEncryptedChallengeResponse = message.get("response").getAsString();
             System.out.println("[Server] Received challenge response (hex) from user: " + currentUserId);
             
             // Convert hex response back to encrypted string
@@ -333,10 +412,10 @@ public class AccessAuthorizationController {
             System.out.println("[Server] Challenge response verified successfully for user: " + currentUserId);
             serverState = "AUTHENTICATED";
             
-            // Send success response
+            // Send success response with hex-encoded data
             JsonObject successData = new JsonObject();
-            successData.addProperty("user_id", currentUserId);
-            successData.addProperty("timestamp", System.currentTimeMillis());
+            successData.addProperty("user_id", stringToHex(currentUserId));
+            successData.addProperty("timestamp", stringToHex(String.valueOf(System.currentTimeMillis())));
             sendProtocolMessage(STEP_AUTH_SUCCESS, "Authentication successful", successData);
             
             System.out.println("[Server] Authentication completed successfully for user: " + currentUserId);
@@ -382,7 +461,7 @@ public class AccessAuthorizationController {
         if (currentClient != null) {
             JsonObject json = new JsonObject();
             json.addProperty("type", protocolStep);
-            json.addProperty("message", message);
+            json.addProperty("message", stringToHex(message)); // Encode message in hex
             json.addProperty("timestamp", System.currentTimeMillis());
             
             if (data != null) {
@@ -390,7 +469,8 @@ public class AccessAuthorizationController {
             }
             
             currentClient.sendJson(json);
-            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message: " + message);
+            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message (original): " + message);
+            System.out.println("[Server] Sent protocol message - type: " + protocolStep + ", message (hex): " + stringToHex(message));
         }
     }
     
