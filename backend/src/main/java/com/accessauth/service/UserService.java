@@ -32,6 +32,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public Optional<String> getSymmetricKey(Long id) {
+        System.out.println("Fetching symmetric key for user ID: " + id);
         return userRepository.getSymKeyById(id);
     }
 

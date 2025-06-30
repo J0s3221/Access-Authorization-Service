@@ -94,6 +94,23 @@ public class AccessAuthorizationController {
                 server.start();
                 System.out.println("[Server] Protocol server started on port " + serverPort);
 
+                // Test repository by fetching a user with id 1
+                String userId = "2"; // Example user ID
+                Long userIdLong;
+                try {
+                    userIdLong = Long.parseLong(userId);
+                } catch (NumberFormatException e) {
+                    System.out.println("[Server] Invalid user ID format: " + userId);
+                    return;
+                }
+                Optional<String> symKeyOpt = userService.getSymmetricKey(userIdLong);
+                if (symKeyOpt.isPresent()) {
+                    System.out.println("[Server] Symmetric key for user " + userId + ": " + symKeyOpt.get());
+                } else {
+                    System.out.println("[Server] No symmetric key found for user " + userId);
+                }
+                
+
                 while (server.isRunning()) {
                     SecureSocket clientSocket = server.acceptConnection();
                     System.out.println("[Server] New client connected");
@@ -179,20 +196,20 @@ public class AccessAuthorizationController {
 
     /**
      * Handle authentication request (Step 1 of protocol)
-     * Expected message format: {"type": "auth_request", "user_id": "hex_encoded_user_id"}
+     * Expected message format: {"type": "auth_request", "id": "hex_encoded_user_id"}
      * @param message the authentication request message
      */
     private void handleAuthRequest(JsonObject message) {
         try {
             // Check if user_id is provided
-            if (!message.has("user_id") || message.get("user_id").isJsonNull()) {
-                System.out.println("[Server] Auth request missing user_id");
-                sendProtocolMessage(STEP_AUTH_ERROR, "Missing user_id in auth_request", null);
+            if (!message.has("id") || message.get("id").isJsonNull()) {
+                System.out.println("[Server] Auth request missing id");
+                sendProtocolMessage(STEP_AUTH_ERROR, "Missing id in auth_request", null);
                 resetState();
                 return;
             }
             
-            String hexUserId = message.get("user_id").getAsString();
+            String hexUserId = message.get("id").getAsString();
             System.out.println("[Server] Received hex-encoded user ID in auth request: " + hexUserId);
             
             // Decode hex user ID
@@ -239,6 +256,7 @@ public class AccessAuthorizationController {
             }
 
             // Check if user exists in database
+            System.out.println("[Server] Checking if user exists: " + userIdLong);
             if (!userService.userExists(userIdLong)) {
                 System.out.println("[Server] Auth request failed - user not found: " + userIdLong);
                 sendProtocolMessage(STEP_AUTH_ERROR, "User not found or inactive", null);
@@ -247,6 +265,7 @@ public class AccessAuthorizationController {
             }
 
             // Retrieve symmetric key for user
+            System.out.println("[Server] Retrieving symmetric key for user: " + userIdLong);
             Optional<String> symKeyOpt = userService.getSymmetricKey(userIdLong);
             if (!symKeyOpt.isPresent()) {
                 System.out.println("[Server] Auth request failed - symmetric key not found for user: " + userIdLong);
@@ -308,14 +327,14 @@ public class AccessAuthorizationController {
         
         try {
             // Check for response field
-            if (!message.has("response") || message.get("response").isJsonNull()) {
-                System.out.println("[Server] Challenge response missing response field");
-                sendProtocolMessage(STEP_AUTH_ERROR, "Missing response in challenge_response", null);
+            if (!message.has("digest") || message.get("digest").isJsonNull()) {
+                System.out.println("[Server] Challenge response missing digest field");
+                sendProtocolMessage(STEP_AUTH_ERROR, "Missing digest in challenge_response", null);
                 resetState();
                 return;
             }
             
-            String encrypted_hexReceivedDigest = message.get("response").getAsString();
+            String encrypted_hexReceivedDigest = message.get("digest").getAsString();
             System.out.println("[Server] Received challenge response (hex) from user: " + currentUserId);
             
             // Convert encrypted hex response back to Base64 digest string
@@ -367,7 +386,7 @@ public class AccessAuthorizationController {
             
             // Send success response with hex-encoded data
             JsonObject successData = new JsonObject();
-            successData.addProperty("user_id", stringToHex(currentUserId));
+            successData.addProperty("id", stringToHex(currentUserId));
             successData.addProperty("timestamp", stringToHex(String.valueOf(System.currentTimeMillis())));
             sendProtocolMessage(STEP_AUTH_SUCCESS, "Authentication successful", successData);
             

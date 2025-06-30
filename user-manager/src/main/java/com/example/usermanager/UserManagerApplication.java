@@ -88,7 +88,7 @@ public class UserManagerApplication implements CommandLineRunner {
     
         // Gerar chave simétrica
         KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-        keyGen.init(128); 
+        keyGen.init(256); 
         SecretKey secretKey = keyGen.generateKey();
         byte[] keyBytes = secretKey.getEncoded();
         String symKeyBase64 = Base64.getEncoder().encodeToString(keyBytes);
@@ -163,7 +163,7 @@ public class UserManagerApplication implements CommandLineRunner {
     // Helper to generate symmetric AES key encoded in base64
     private String generateSymmetricKey() throws Exception {
         KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-        keyGen.init(128); // 128-bit AES
+        keyGen.init(256); // 256-bit AES
         SecretKey secretKey = keyGen.generateKey();
         return Base64.getEncoder().encodeToString(secretKey.getEncoded());
     }
